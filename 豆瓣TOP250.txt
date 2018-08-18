@@ -1,0 +1,73 @@
+import requests
+from requests.exceptions import RequestException
+from urllib.parse import urlencode
+from lxml import etree
+import json
+import time
+import threading
+
+
+def get_html(start):
+    try:
+        data = {
+            'start': start,
+            'filter': ''
+        }
+        url = 'https://movie.douban.com/top250?' + urlencode(data)
+        html = requests.get(url)
+        if html.status_code == 200:
+            return html.text
+        else:
+            return None
+    except RequestException:
+        print('请求异常')
+        return None
+
+
+def analysis_html(html):
+    selector = etree.HTML(html)
+    data = selector.xpath('//div[@class="item"]')
+    for item in data:
+        rank = item.xpath('div[@class="pic"]/em/text()')
+        url = item.xpath('div[@class="info"]/div[@class="hd"]/a/@href')
+        name = item.xpath('div[@class="info"]/div[@class="hd"]/a/span[@class="title"][1]/text()')
+        creator = str(item.xpath('div[@class="info"]/div[@class="bd"]/p/text()')[0])  #//*[@id="content"]/div/div[1]/ol/li[1]/div/div[2]/div[2]/p[1]
+        grade = item.xpath('div[@class="info"]/div[@class="bd"]/div[@class="star"]/span[@class="rating_num"]/text()')
+        yield {
+            '排名': rank[0],
+            '链接': url[0],
+            '电影名': name[0],
+            '主创': creator.replace('\n', '').lstrip().replace('\xa0', ''),
+            '评分': grade[0]
+        }
+
+
+lock = threading.Lock()
+def write_into_file(data):
+    with lock:
+        with open(r'C:\Users\Ricardo-H\Desktop\豆瓣TOP250', 'a', encoding='utf-8') as f:
+            f.write(data)
+            f.close()
+
+
+def main(num):
+    html = get_html(num*25)
+    res = analysis_html(html)
+    for item in res:
+        print('正在录入本地文件')
+        write_into_file(json.dumps(item, ensure_ascii=False) + '\n')
+
+if __name__ == '__main__':
+    start = time.time()
+    # main()
+    threads = []
+    for i in range(10):
+        t = threading.Thread(target=main, args=(i,))
+        threads.append(t)
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    end = time.time()
+    print('用时：', (end - start))
